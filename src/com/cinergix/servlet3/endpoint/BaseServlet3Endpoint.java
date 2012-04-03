@@ -22,6 +22,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.sql.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -44,14 +45,36 @@ import java.util.concurrent.ThreadFactory;
  * BaseHTTPEndpoint instead.
  */
 public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
+	
     private static final byte NULL_BYTE = (byte)0; // signal that a chunk of data should be skipped by the client.
+    
     private static final int DEFAULT_MAX_STREAMING_CLIENTS = 500;
+    
+    private static final String P_NAME_ENABLE_DEBUG = "enable-debug-mode";
+    private static final String P_NAME_MAX_STREAMING_CLIENTS = "max-streaming-clients";
+    
+    private static boolean DEBUG_ON;
 
-    // Using a single threaded executor for handling all the pushing
+    /**
+     * This is the executor service which will ensure a single thread run at all times
+     * for the message pushing runnable
+     */
     private ExecutorService notifierThread = null;
+    
+    /**
+     * The runnable that contains the code for pushing messages
+     */
     private Runnable notifierRunnable = null;
-    private static final Queue<AsyncContext> queue = new ConcurrentLinkedQueue<AsyncContext>();
+    
+    /**
+     * Indicator for notifierThread status
+     */
     private static boolean notifierRunning = false;
+    
+    /**
+     * The queue of AsyncContexts that need to be processed.
+     */
+    private static final Queue<AsyncContext> queue = new ConcurrentLinkedQueue<AsyncContext>();
 
     /**
      * Used to synchronize sets and gets to the number of streaming clients.
@@ -121,6 +144,16 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         super(enableManagement);
     }
 
+    private void setDebugStatus ( ConfigMap props ) {
+    	String debug = props.getProperty( P_NAME_ENABLE_DEBUG );
+    	
+    	if ( debug != null && debug == "true") {
+    		DEBUG_ON = true;
+    	} else {
+    		DEBUG_ON = false;
+    	}
+    }
+    
     /**
      * Initializes the <code>Endpoint</code> with the properties.
      * If subclasses override, they must call <code>super.initialize()</code>.
@@ -131,17 +164,23 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     @Override
     public void initialize(String id, ConfigMap properties) {
         super.initialize(id, properties);
+        
+        this.setDebugStatus(properties);
+        
         debug("Initializing BaseServelt3Endpoint");
 
         // Maximum number of clients allowed to have streaming HTTP connections with the endpoint.
-        maxStreamingClients = properties.getPropertyAsInt("max-streaming-clients", DEFAULT_MAX_STREAMING_CLIENTS);
-        debug("Max client to stream: " + maxStreamingClients);
+        maxStreamingClients = properties.getPropertyAsInt(P_NAME_MAX_STREAMING_CLIENTS, DEFAULT_MAX_STREAMING_CLIENTS);
+        debug("Max allowed clients for streaming: " + maxStreamingClients );
         
         // Set initial state for the canWait flag based on whether we allow waits or not.
         canStream = (maxStreamingClients > 0);
+        
         final FlexSession session = FlexContext.getFlexSession();
+        
         notifierRunnable = new Runnable() {
-            public void run() {
+          
+        	public void run() {
             	notifierRunning = true;
             	debug ( "notifyThread Started queue : " + queue.size() );
             	
@@ -159,10 +198,8 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 continue;
                             }
                             
-                            notifier =
-                                (EndpointPushNotifier) ac.getRequest().getAttribute("pushNotifier");
-                            FlexClient flexClient = 
-                                (FlexClient) ac.getRequest().getAttribute("flexClient");
+                            notifier = (EndpointPushNotifier) ac.getRequest().getAttribute("pushNotifier");
+                            FlexClient flexClient = (FlexClient) ac.getRequest().getAttribute("flexClient");
                             HttpServletResponse res = (HttpServletResponse) ac.getResponse();
                             ServletOutputStream os = res.getOutputStream();
                             if (notifier.isClosed()) {
@@ -173,10 +210,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 
                                 // Terminate the response.
                                 streamChunk(null, os, res);
-                                //COMMENTED TO TEST - HT
-//                                if (ac.getRequest().isAsyncStarted()) {
-//                                    ac.complete();
-//                                }
+                                if (ac.getRequest().isAsyncStarted()) {
+                                    ac.complete();
+                                }
                                 queue.remove(ac);
                                 cleanUp(notifier, session);
                             }
@@ -264,11 +300,14 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         
         //Create a single threaded executor - HT
         notifierThread = Executors.newSingleThreadExecutor();
+        
     }
 
 
     private void debug(String msg) {
-        System.out.println(Thread.currentThread().getName() + " - " + msg);
+    	if ( DEBUG_ON ) {
+    		System.out.println( Thread.currentThread().getName() + " - " + msg);
+    	}
     }
 
     @Override
@@ -597,6 +636,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 
                 queue.add(actx);
                 
+                debug( "ExecutorService.isTerminated " + notifierThread.isTerminated() );
                 //If the notifier thread is not running then start it.
                 if ( !notifierRunning ) {
                 	debug( "starting notifierThread running");
