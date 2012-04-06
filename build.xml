@@ -39,6 +39,7 @@
     <target name="jar" depends="compile">
         <mkdir dir="${dist.dir}" />
         <jar destfile="${jar.file.name}" basedir="${build.dir}" includes="**/*.class" />
+    	<copy file="${jar.file.name}" tofile="/server/blazeds/tomcat/webapps/jupiter/WEB-INF/lib/${ant.project.name}-${version}.jar" overwrite="true" />
     </target>
     
     <target name="source">
@@ -57,5 +58,7 @@
     </target>
     
     <target name="all" depends="clean-all, jar, source, javadoc" />
+	
+	
 
 </project>

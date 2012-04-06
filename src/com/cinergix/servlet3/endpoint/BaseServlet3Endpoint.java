@@ -32,6 +32,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Base for HTTP-based endpoints that support streaming HTTP connections to
@@ -53,7 +55,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     private static final String P_NAME_ENABLE_DEBUG = "enable-debug-mode";
     private static final String P_NAME_MAX_STREAMING_CLIENTS = "max-streaming-clients";
     
-    private static boolean DEBUG_ON;
+    private static boolean DEBUG_ON = false;
 
     /**
      * This is the executor service which will ensure a single thread run at all times
@@ -144,16 +146,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         super(enableManagement);
     }
 
-    private void setDebugStatus ( ConfigMap props ) {
-    	String debug = props.getProperty( P_NAME_ENABLE_DEBUG );
-    	
-    	if ( debug != null && debug == "true") {
-    		DEBUG_ON = true;
-    	} else {
-    		DEBUG_ON = false;
-    	}
-    }
-    
     /**
      * Initializes the <code>Endpoint</code> with the properties.
      * If subclasses override, they must call <code>super.initialize()</code>.
@@ -304,12 +296,41 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     }
 
 
-    private void debug(String msg) {
+    private void debug( String msg ) {
     	if ( DEBUG_ON ) {
-    		System.out.println( Thread.currentThread().getName() + " - " + msg);
+    		System.out.println( Thread.currentThread().getName() + " - " + msg );
     	}
     }
 
+    private void setDebugStatus ( ConfigMap props ) {
+    	String debugString = props.getProperty( P_NAME_ENABLE_DEBUG );
+    	
+    	if ( debugString != null && debugString.toLowerCase().equals( "true" ) ) {
+    		DEBUG_ON = true;
+    	} else {
+    		DEBUG_ON = false;
+    	}
+    }
+    
+    private String threadNameCount ( String currentName ) {
+    	Pattern p = Pattern.compile("-R\\d{1,10}");
+    	Matcher m = p.matcher( currentName );
+    	
+    	if ( m.find() ) {
+    		String realName = currentName.substring( 0 , currentName.length() - m.group(0).length() );
+    		int count = Integer.parseInt( m.group(0).substring(2) );
+    		
+    		count++;
+    		currentName = realName + "-R" + count;
+    		
+    	} else {
+    		currentName += "-R0";
+    	}
+    	
+    	return currentName;
+    }
+        
+    
     @Override
     public void start() {
         debug("Goind to start servelt 3 endpoint");
@@ -382,8 +403,10 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      * @param flexClient FlexClient that requested the streaming connection.
      */
     protected void handleFlexClientStreamingOpenRequest(HttpServletRequest req, HttpServletResponse res, FlexClient flexClient) {
-        debug("we are getting open request");
+        
+    	debug("we are getting open request");
         final FlexSession session = FlexContext.getFlexSession();
+        
         if (canStream && session.canStream) {
             debug("can stream");
             debug("streamingClientsCount " + streamingClientsCount);
@@ -491,7 +514,8 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
             boolean suppressIOExceptionLogging = false; // Used to suppress logging for IO exception.
             try {
                 debug("goint to start streaming");
-                currentThread.setName(threadName + "-in-streaming-mode");
+                //currentThread.setName(threadName + "-in-streaming-mode");
+                currentThread.setName( this.threadNameCount( threadName ) );
 
                 // Open and commit response headers and get output stream.
                 if (addNoCacheHeaders)
@@ -636,7 +660,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 
                 queue.add(actx);
                 
-                debug( "ExecutorService.isTerminated " + notifierThread.isTerminated() );
                 //If the notifier thread is not running then start it.
                 if ( !notifierRunning ) {
                 	debug( "starting notifierThread running");
