@@ -23,6 +23,8 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.sql.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -71,7 +74,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     /**
      * Indicator for notifierThread status
      */
-    private static boolean notifierRunning = false;
+    private static Future threadState;
     
     /**
      * The queue of AsyncContexts that need to be processed.
@@ -173,7 +176,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         notifierRunnable = new Runnable() {
           
         	public void run() {
-            	notifierRunning = true;
             	debug ( "notifyThread Started queue : " + queue.size() );
             	
             	//Continue to push only if the queue contains AsyncContexts - HT
@@ -209,33 +211,41 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 cleanUp(notifier, session);
                             }
                             synchronized (notifier.pushNeeded) {
+                            
                                 // Drain any messages that might have been accumulated
                                 // while the previous drain was being processed.
-                                streamMessages(notifier.drainMessages(), os, res);
+                            	List<AsyncMessage> messages = notifier.drainMessages();
+                           
+                            	if ( !notifier.isClosed() && messages != null && !messages.isEmpty() ) {
+                            		streamMessages( messages, os, res);
+                            	}
 
                                 notifier.pushNeeded.wait(getServerToClientHeartbeatMillis());
 
-                                List<AsyncMessage> messages = notifier.drainMessages();
+                                messages = null;
+                                messages = notifier.drainMessages();
                                 // If there are no messages to send to the client, send an null
                                 // byte as a heartbeat to make sure the client is still valid.
-                                if (messages == null && getServerToClientHeartbeatMillis() > 0) {
-                                    try {
-                                        //debug("stream hearbeat");
-                                        os.write(NULL_BYTE);
-                                        res.flushBuffer();
-                                    } catch (Exception e) {
-                                        if (Log.isWarn())
-                                            log.warn("Endpoint with id '" + getId() + "' is closing the streaming connection to FlexClient with id '"
-                                                    + flexClient.getId() + "' because endpoint encountered a socket write error" +
-                                            ", possibly due to an unresponsive FlexClient.", e);
-                                        continue; // Exit the wait loop.
-                                    }
-                                } else { // Otherwise stream the messages to the client.
-                                    debug("stream messages");
-                                    // Update the last time notifier was used to drain messages.
-                                    // Important for idle timeout detection.
-                                    streamMessages(messages, os, res);
-                                    notifier.updateLastUse();
+                                if ( !notifier.isClosed() ) {
+	                                if (messages == null && getServerToClientHeartbeatMillis() > 0) {
+	                                    try {
+	                                        //debug("stream hearbeat");
+	                                        os.write(NULL_BYTE);
+	                                        res.flushBuffer();
+	                                    } catch (Exception e) {
+	                                        if (Log.isWarn())
+	                                            log.warn("Endpoint with id '" + getId() + "' is closing the streaming connection to FlexClient with id '"
+	                                                    + flexClient.getId() + "' because endpoint encountered a socket write error" +
+	                                            ", possibly due to an unresponsive FlexClient.", e);
+	                                        continue; // Exit the wait loop.
+	                                    }
+	                                } else { // Otherwise stream the messages to the client.
+	                                    debug("stream messages");
+	                                    // Update the last time notifier was used to drain messages.
+	                                    // Important for idle timeout detection.
+	                                    streamMessages(messages, os, res);
+	                                    notifier.updateLastUse();
+	                                }
                                 }
                                 
                             }
@@ -256,7 +266,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 }
                 
                 debug ( "notifyThread Ended queue : " + queue.size() );
-                notifierRunning = false;
                 
             }
 
@@ -295,10 +304,14 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         
     }
 
-
+    static DateFormat dateFormat;
     private void debug( String msg ) {
     	if ( DEBUG_ON ) {
-    		System.out.println( Thread.currentThread().getName() + " - " + msg );
+    		
+    		if ( dateFormat == null ) {
+    			dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    		}
+    		System.out.println( dateFormat.format(new java.util.Date()) + " " + Thread.currentThread().getName() + " - " + msg );
     	}
     }
 
@@ -440,6 +453,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             + flexClient.getId() + "' because max-streaming-clients limit of '"
                             + maxStreamingClients + "' has been reached.");
                 try {
+                	debug ( "Going to send error. Response committed:" + res.isCommitted() );
                     // Return an HTTP status code 400.
                     res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                 } catch (IOException ignore) {}
@@ -500,6 +514,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             + flexClient.getId() + "' because " + UserAgentManager.MAX_PERSISTENT_CONNECTIONS_PER_SESSION + " limit of '" + session.maxConnectionsPerSession
                             + ((agentSettings != null) ? "' for user-agent '" + agentSettings.getMatchOn() + "'" : "") +  " has been reached." );
                 try {
+                	debug ( "Going to send error. Response committed:" + res.isCommitted() );
                  // Return an HTTP status code 400.
                     res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                 } catch (IOException ignore) {
@@ -564,7 +579,10 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             }
                         }
                         try {
-                            res.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                        	debug ( "Going to send error. Response committed:" + res.isCommitted() );
+                        	if ( !res.isCommitted() ) {
+                        		res.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                        	}
                         } catch (IOException ignore) {
                             // NOWARN
                         }
@@ -661,10 +679,12 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 queue.add(actx);
                 
                 //If the notifier thread is not running then start it.
-                if ( !notifierRunning ) {
+                if ( threadState == null || threadState.isDone() ){
                 	debug( "starting notifierThread running");
-                	notifierThread.execute( notifierRunnable );
+                	threadState = notifierThread.submit( notifierRunnable );
+                
                 }
+                
                 
             } catch (IOException e) {
                 if (Log.isWarn() && !suppressIOExceptionLogging)
