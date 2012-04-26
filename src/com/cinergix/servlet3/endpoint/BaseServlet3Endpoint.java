@@ -337,7 +337,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     	if ( !notifier.isClosed() && messages != null && !messages.isEmpty() ) {
                     		streamMessages( messages, os, res);
                     	}
-
+                    	
                         notifier.pushNeeded.wait( getServerToClientHeartbeatMillis() );
 
                         messages = null;
@@ -350,17 +350,24 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 try {
                                     os.write(NULL_BYTE);
                                     res.flushBuffer();
+                                } catch ( IOException ioe ) {
+                                	debug("IOError occured when pushing null byte :" + ioe.getMessage() );
+                                	cleanUp( ac, notifier );
+                                	continue;
                                 } catch (Exception e) {
+                                	debug("Error occured when pushing null byte :" + e.getMessage() );
+                                	
                                     if (Log.isWarn()) {
                                         log.warn("Endpoint with id '" + getId() + "' is closing the streaming connection to FlexClient with id '"
                                                 + flexClient.getId() + "' because endpoint encountered a socket write error" +
                                         ", possibly due to an unresponsive FlexClient.", e);
                                     }
-                                    continue; // Exit the wait loop.
+                                    cleanUp( ac, notifier );
+                                    continue;
                                 }
                                 
                             } else { // Otherwise stream the messages to the client.
-                                debug("stream messages");
+                                debug("Stream messages");
                                 // Update the last time notifier was used to drain messages.
                                 // Important for idle timeout detection.
                                 streamMessages(messages, os, res);
@@ -375,9 +382,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     // to do this outside synchronized(notifier.pushNeeded) to avoid
                     // thread deadlock!
                     flexClient.updateLastUse();
+                
                     
                 } catch (Exception ex) {
-                    ex.printStackTrace();
+                	debug("Error occured in push loop :" + ex.getMessage() );
+                    //ex.printStackTrace();
                     cleanUp( ac, notifier );
                 }
                 
@@ -596,8 +605,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                         		res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                         	}
                         } catch (IOException ignore) {
-                            // NOWARN
+                        	debug ( "Exception when trying to send error" );
                         }
+                        debug ( "Open request ignored!" );
                         return; // Exit early.
                     }
                 }
