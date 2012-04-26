@@ -157,7 +157,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      * @param properties Properties for the <code>Endpoint</code>.
      */
     @Override
-    public void initialize(String id, ConfigMap properties) {
+    public void initialize( String id, ConfigMap properties ) {
         super.initialize(id, properties);
         
         this.setDebugStatus(properties);
@@ -171,132 +171,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         // Set initial state for the canWait flag based on whether we allow waits or not.
         canStream = (maxStreamingClients > 0);
         
-        final FlexSession session = FlexContext.getFlexSession();
+        //final FlexSession session = FlexContext.getFlexSession();
         
         notifierRunnable = new Runnable() {
-          
         	public void run() {
             	debug ( "notifyThread Started queue : " + queue.size() );
-            	
-            	//Continue to push only if the queue contains AsyncContexts - HT
-                while ( !queue.isEmpty() ) {
-                	
-                    for (AsyncContext ac : queue) {
-                    	
-                        EndpointPushNotifier notifier = null;
-                        try {
-                        	//If the AsyncContext has completed (due to timeout) then remove it.
-                            if (ac.getRequest() == null || !ac.getRequest().isAsyncStarted() ) {
-                                queue.remove(ac);
-                                cleanUp(notifier, session);
-                                continue;
-                            }
-                            
-                            notifier = (EndpointPushNotifier) ac.getRequest().getAttribute("pushNotifier");
-                            FlexClient flexClient = (FlexClient) ac.getRequest().getAttribute("flexClient");
-                            HttpServletResponse res = (HttpServletResponse) ac.getResponse();
-                            ServletOutputStream os = res.getOutputStream();
-                            if (notifier.isClosed()) {
-                                debug("notifier is closed, time to end our streaming");
-                                if (  flexClient != null ) {
-                                	debug("flex client id is: " + flexClient.getId() + " " + flexClient.isValid() );
-                                }
-                                
-                                // Terminate the response.
-                                streamChunk(null, os, res);
-                                if (ac.getRequest().isAsyncStarted()) {
-                                    ac.complete();
-                                }
-                                queue.remove(ac);
-                                cleanUp(notifier, session);
-                            }
-                            synchronized (notifier.pushNeeded) {
-                            
-                                // Drain any messages that might have been accumulated
-                                // while the previous drain was being processed.
-                            	List<AsyncMessage> messages = notifier.drainMessages();
-                           
-                            	if ( !notifier.isClosed() && messages != null && !messages.isEmpty() ) {
-                            		streamMessages( messages, os, res);
-                            	}
-
-                                notifier.pushNeeded.wait(getServerToClientHeartbeatMillis());
-
-                                messages = null;
-                                messages = notifier.drainMessages();
-                                // If there are no messages to send to the client, send an null
-                                // byte as a heartbeat to make sure the client is still valid.
-                                if ( !notifier.isClosed() ) {
-	                                if (messages == null && getServerToClientHeartbeatMillis() > 0) {
-	                                    try {
-	                                        //debug("stream hearbeat");
-	                                        os.write(NULL_BYTE);
-	                                        res.flushBuffer();
-	                                    } catch (Exception e) {
-	                                        if (Log.isWarn())
-	                                            log.warn("Endpoint with id '" + getId() + "' is closing the streaming connection to FlexClient with id '"
-	                                                    + flexClient.getId() + "' because endpoint encountered a socket write error" +
-	                                            ", possibly due to an unresponsive FlexClient.", e);
-	                                        continue; // Exit the wait loop.
-	                                    }
-	                                } else { // Otherwise stream the messages to the client.
-	                                    debug("stream messages");
-	                                    // Update the last time notifier was used to drain messages.
-	                                    // Important for idle timeout detection.
-	                                    streamMessages(messages, os, res);
-	                                    notifier.updateLastUse();
-	                                }
-                                }
-                                
-                            }
-                            // Update the FlexClient last use time to prevent FlexClient from
-                            // timing out when the client is still subscribed. It is important
-                            // to do this outside synchronized(notifier.pushNeeded) to avoid
-                            // thread deadlock!
-                            flexClient.updateLastUse();
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                            if (ac.getRequest().isAsyncStarted()) {
-                                ac.complete();
-                            }
-                            queue.remove(ac);
-                            cleanUp(notifier, session);
-                        }
-                    }
-                }
-                
+            	pushMessages( );
                 debug ( "notifyThread Ended queue : " + queue.size() );
                 
             }
-
-            private void cleanUp(EndpointPushNotifier notifier, FlexSession session) {
-                try {
- 					debug("cleanUp");
-//                	This is already done in onComplete - HT                	
-//                    synchronized (lock) {
-//                        --streamingClientsCount; 
-//                        canStream = (streamingClientsCount < maxStreamingClients);
-//                        
-//                        //If the flex client closes the session the FlexSession would be null at this point -HT
-//                        if (session != null) { 
-//	                        synchronized (session) {
-//	                            --session.streamingConnectionsCount;
-//	                            session.canStream = (session.streamingConnectionsCount < session.maxConnectionsPerSession);
-//	                        }
-//                        }
-//                    }
-//    
-                    if (notifier != null && currentStreamingRequests != null) {
-                        currentStreamingRequests.remove(notifier.getNotifierId());
-                        notifier.close();
-                    }
-                    
-                    
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-                
         };
         
         //Create a single threaded executor - HT
@@ -304,6 +187,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         
     }
 
+    //--------------------------------------------------------------------------
+    //
+    // Debug and Trace methods
+    //
+    //-------------------------------------------------------------------------- 
     static DateFormat dateFormat;
     private void debug( String msg ) {
     	if ( DEBUG_ON ) {
@@ -326,33 +214,42 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     }
     
     private String threadNameCount ( String currentName ) {
-    	Pattern p = Pattern.compile("-R\\d{1,10}");
-    	Matcher m = p.matcher( currentName );
     	
-    	if ( m.find() ) {
-    		String realName = currentName.substring( 0 , currentName.length() - m.group(0).length() );
-    		int count = Integer.parseInt( m.group(0).substring(2) );
-    		
-    		count++;
-    		currentName = realName + "-R" + count;
-    		
-    	} else {
-    		currentName += "-R0";
+    	if ( DEBUG_ON ) {
+	    	Pattern p = Pattern.compile("-R\\d{1,10}");
+	    	Matcher m = p.matcher( currentName );
+	    	
+	    	if ( m.find() ) {
+	    		String realName = currentName.substring( 0 , currentName.length() - m.group(0).length() );
+	    		int count = Integer.parseInt( m.group(0).substring(2) );
+	    		
+	    		count++;
+	    		currentName = realName + "-R" + count;
+	    		
+	    	} else {
+	    		currentName += "-R0";
+	    	}
     	}
     	
     	return currentName;
     }
         
+    //--------------------------------------------------------------------------
+    //
+    // Endpoint methods
+    //
+    //--------------------------------------------------------------------------    
     
     @Override
     public void start() {
-        debug("Goind to start servelt 3 endpoint");
-        if (isStarted())
+        debug("Starting Servelt 3 endpoint");
+        
+        if ( isStarted() )
             return;
 
         super.start();
 
-        if (getConnectionIdleTimeoutMinutes() > 0) {
+        if ( getConnectionIdleTimeoutMinutes() > 0 ) {
             pushNotifierTimeoutManager = new TimeoutManager(
                     new ThreadFactory() {
                         int counter = 1;
@@ -372,7 +269,8 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      */
     @Override
     public void stop() {
-        debug("stopping!!!");
+        debug("Stopping...");
+        
         if (!isStarted())
             return;
 
@@ -390,17 +288,131 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         
         clearThreadLocals();
         
-        debug("before notifier shutdown");
         //Shutdown the single threaded executor - HT
         notifierThread.shutdownNow();
-        //notifierThread.shutdown();
-        
-        debug("before super.stop");
+
         super.stop();
         
-        debug("stop completing");
+        debug("Stop completed.");
     }
 
+    /**
+     * This method will be only used by the ExecutorService to push messages
+     * to the clients connected. This must NOT be called from anywhere else.
+     */
+    private void pushMessages ( ) {
+    	
+    	//Continue to push only if the queue contains AsyncContexts - HT
+        while ( !queue.isEmpty() ) {
+        	
+            for (AsyncContext ac : queue) {
+            	
+                EndpointPushNotifier notifier = null;
+                try {
+                	//If the AsyncContext has completed (due to timeout) then remove it.
+                    if ( ac.getRequest() == null || !ac.getRequest().isAsyncStarted() ) {
+                        cleanUp( ac, notifier );
+                        continue;
+                    }
+                    
+                    notifier = (EndpointPushNotifier) ac.getRequest().getAttribute("pushNotifier");
+                    FlexClient flexClient = (FlexClient) ac.getRequest().getAttribute("flexClient");
+                    HttpServletResponse res = (HttpServletResponse) ac.getResponse();
+                    ServletOutputStream os = res.getOutputStream();
+                    
+                    if (notifier.isClosed()) {
+                        debug("Notifier seems to be closed. Ending streaming.");
+                        
+                        // Terminate the response.
+                        streamChunk(null, os, res);
+                        cleanUp( ac, notifier );
+                    }
+                    
+                    synchronized (notifier.pushNeeded) {
+                    
+                        // Drain any messages that might have been accumulated
+                        // while the previous drain was being processed.
+                    	List<AsyncMessage> messages = notifier.drainMessages();
+                   
+                    	if ( !notifier.isClosed() && messages != null && !messages.isEmpty() ) {
+                    		streamMessages( messages, os, res);
+                    	}
+
+                        notifier.pushNeeded.wait( getServerToClientHeartbeatMillis() );
+
+                        messages = null;
+                        messages = notifier.drainMessages();
+                        // If there are no messages to send to the client, send an null
+                        // byte as a heartbeat to make sure the client is still valid.
+                        if ( !notifier.isClosed() ) {
+                        	
+                            if (messages == null && getServerToClientHeartbeatMillis() > 0) {
+                                try {
+                                    os.write(NULL_BYTE);
+                                    res.flushBuffer();
+                                } catch (Exception e) {
+                                    if (Log.isWarn()) {
+                                        log.warn("Endpoint with id '" + getId() + "' is closing the streaming connection to FlexClient with id '"
+                                                + flexClient.getId() + "' because endpoint encountered a socket write error" +
+                                        ", possibly due to an unresponsive FlexClient.", e);
+                                    }
+                                    continue; // Exit the wait loop.
+                                }
+                                
+                            } else { // Otherwise stream the messages to the client.
+                                debug("stream messages");
+                                // Update the last time notifier was used to drain messages.
+                                // Important for idle timeout detection.
+                                streamMessages(messages, os, res);
+                                notifier.updateLastUse();
+                            }
+                            
+                        }
+                        
+                    }
+                    // Update the FlexClient last use time to prevent FlexClient from
+                    // timing out when the client is still subscribed. It is important
+                    // to do this outside synchronized(notifier.pushNeeded) to avoid
+                    // thread deadlock!
+                    flexClient.updateLastUse();
+                    
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    cleanUp( ac, notifier );
+                }
+                
+            }
+        }
+        
+    }
+    
+    /**
+     * Clean up the AsyncContext and EndpointPushNotifier assure it is closed
+     * @param ac
+     * @param notifier
+     */
+    private void cleanUp( AsyncContext ac, EndpointPushNotifier notifier ) {
+        try {
+			debug("Clean Up called");
+			
+			//If the context is still not committed, go ahead and commit it.
+			if ( ac.getRequest().isAsyncStarted() ) {
+                ac.complete();
+            }
+			
+			//Remove the context from the queue
+            queue.remove(ac);
+
+            if (notifier != null && currentStreamingRequests != null) {
+                currentStreamingRequests.remove( notifier.getNotifierId() );
+                notifier.close();
+            }
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
     //--------------------------------------------------------------------------
     //
     // Protected Methods
