@@ -407,7 +407,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
 			debug("Clean Up called");
 			
 			//If the context is still not committed, go ahead and commit it.
-			if ( ac.getRequest().isAsyncStarted() ) {
+			if ( ac.getRequest() != null && ac.getRequest().isAsyncStarted() ) {
                 ac.complete();
             }
 			
