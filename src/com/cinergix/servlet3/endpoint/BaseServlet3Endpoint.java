@@ -1,5 +1,6 @@
 package com.cinergix.servlet3.endpoint;
 
+import edu.emory.mathcs.backport.java.util.concurrent.ThreadFactory;
 import flex.messaging.FlexContext;
 import flex.messaging.FlexSession;
 import flex.messaging.MessageException;
@@ -12,7 +13,6 @@ import flex.messaging.log.Log;
 import flex.messaging.messages.AcknowledgeMessage;
 import flex.messaging.messages.AsyncMessage;
 import flex.messaging.util.TimeoutManager;
-import flex.messaging.util.UserAgentManager;
 
 import javax.servlet.AsyncContext;
 import javax.servlet.AsyncEvent;
@@ -34,7 +34,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -131,6 +130,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
         this.maxStreamingClients = maxStreamingClients;
         canStream = (streamingClientsCount < maxStreamingClients);
     }
+    
+    
+    private int getConnectionIdleTimeoutMinutes () {
+    	
+    	// getConnectionIdleTimeoutMinutes is not introduced until BlazeDS 4.
+    	// Using the depeceated method getIdleTimeoutMinutes, which serves the same purpose
+    	return getIdleTimeoutMinutes();
+    }
+    
     
     /**
      * Constructs an unmanaged <code>BaseStreamingHTTPEndpoint</code>.
@@ -248,10 +256,10 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
             return;
 
         super.start();
-
+        
         if ( getConnectionIdleTimeoutMinutes() > 0 ) {
             pushNotifierTimeoutManager = new TimeoutManager(
-                    new ThreadFactory() {
+                    new ThreadFactory() {												
                         int counter = 1;
                         public synchronized Thread newThread(Runnable runnable) {
                             Thread t = new Thread(runnable);
@@ -524,14 +532,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 } catch (IOException ignore) {}
                 return;
             }
-
+                       
             // Setup for specific user agents.
             byte[] kickStartBytesToStream = null;
-            String userAgentValue = req.getHeader(UserAgentManager.USER_AGENT_HEADER_NAME);
-            UserAgentSettings agentSettings = userAgentManager.match(userAgentValue);
+            String userAgentValue = req.getHeader( "user-agent" ); //Changed for BlazeDS3 compatibility
+            //System.out.println ("User agent detected : " + userAgentValue );
+            UserAgentSettings agentSettings = UserAgentSettings.getAgent( userAgentValue ); //Changed for BlazeDS3 compatibility
             if (agentSettings != null) {
                 synchronized (session) {
-                    session.maxConnectionsPerSession = agentSettings.getMaxPersistentConnectionsPerSession();
+                    session.maxConnectionsPerSession = agentSettings.getMaxStreamingConnectionsPerSession(); //Changed for BlazeDS3 compatibility
                 }
 
                 int kickStartBytes = agentSettings.getKickstartBytes();
@@ -576,7 +585,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
             if (!thisThreadCanStream) {
                 if (Log.isInfo())
                     log.info("Endpoint with id '" + getId() + "' cannot grant streaming connection to FlexClient with id '"
-                            + flexClient.getId() + "' because " + UserAgentManager.MAX_PERSISTENT_CONNECTIONS_PER_SESSION + " limit of '" + session.maxConnectionsPerSession
+                            + flexClient.getId() + "' because max-streaming-connections-per-session limit of '" + session.maxConnectionsPerSession
                             + ((agentSettings != null) ? "' for user-agent '" + agentSettings.getMatchOn() + "'" : "") +  " has been reached." );
                 try {
                 	debug ( "Going to send error. Response committed:" + res.isCommitted() );
@@ -770,9 +779,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     + flexClient.getId() + "' because max-streaming-clients limit of '"
                     + maxStreamingClients + "' has been reached.";
                 } else if (!session.canStream) {
-                    logString = "Endpoint with id '" + getId() + "' cannot grant streaming connection to FlexClient with id '"
+                   /* logString = "Endpoint with id '" + getId() + "' cannot grant streaming connection to FlexClient with id '"
                     + flexClient.getId() + "' because " + UserAgentManager.MAX_STREAMING_CONNECTIONS_PER_SESSION + " limit of '"
-                    + session.maxConnectionsPerSession + "' has been reached.";
+                    + session.maxConnectionsPerSession + "' has been reached.";*/
                 }
                 if (logString != null)
                     log.error(logString);

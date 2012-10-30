@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
+import java.util.List;
 
 import flex.messaging.FlexContext;
 import flex.messaging.MessageException;
@@ -12,6 +14,7 @@ import flex.messaging.io.MessageIOConstants;
 import flex.messaging.io.MessageSerializer;
 import flex.messaging.io.SerializationContext;
 import flex.messaging.io.SerializationException;
+import flex.messaging.io.amf.ASObject;
 import flex.messaging.io.amf.ActionContext;
 import flex.messaging.io.amf.ActionMessage;
 import flex.messaging.io.amf.AmfTrace;
@@ -19,6 +22,8 @@ import flex.messaging.io.amf.MessageBody;
 import flex.messaging.log.Log;
 import flex.messaging.log.LogCategories;
 import flex.messaging.log.Logger;
+import flex.messaging.messages.ErrorMessage;
+import flex.messaging.messages.Message;
 import flex.messaging.messages.MessagePerformanceInfo;
 import flex.messaging.util.ExceptionUtil;
 import flex.messaging.util.StringUtils;
@@ -53,7 +58,9 @@ public class SerializationFilter extends flex.messaging.endpoints.amf.Serializat
 
         // Additional AMF packet tracing is enabled only at the debug logging level
         // and only if there's a target listening for it.
-        AmfTrace debugTrace = Log.isDebug() && logger.hasTarget()? new AmfTrace() : null;
+        
+        // AmfTrace debugTrace = Log.isDebug() && logger.hasTarget()? new AmfTrace() : null; - Commented for BlazeDS3 compatibility
+        AmfTrace debugTrace = Log.isDebug() ? new AmfTrace() : null;
 
         // Create an empty ActionMessage object to hold our response
         context.setResponseMessage(new ActionMessage());
@@ -126,7 +133,8 @@ public class SerializationFilter extends flex.messaging.endpoints.amf.Serializat
 
                 // Additional AMF packet tracing is enabled only at the debug logging level
                 // and only if there's a target listening for it.
-                debugTrace = Log.isDebug() && logger.hasTarget()? new AmfTrace() : null;
+                // AmfTrace debugTrace = Log.isDebug() && logger.hasTarget()? new AmfTrace() : null; - Commented for BlazeDS3 compatibility
+                debugTrace = Log.isDebug()? new AmfTrace() : null;
 
                 try
                 {
@@ -177,6 +185,7 @@ public class SerializationFilter extends flex.messaging.endpoints.amf.Serializat
                 }
                 catch (Exception e)
                 {
+                	//e.printStackTrace();
                     handleSerializationException(sc, context, e, logger);
                 }
                 finally
@@ -251,6 +260,140 @@ public class SerializationFilter extends flex.messaging.endpoints.amf.Serializat
                 logger.error(ExceptionUtil.toString(t));
         }
 
+    }
+    
+    /**
+     * NOTE: This method is copied from BlazeDS 4 source code for BlazeDS 3 downgrade compatibility
+     * 
+     * This static method provides a common way for serialization errors to be
+     * handled. It attempts to provide the client with useful information about 
+     * the serialization failure. When there is a serialization failure, there is
+     * no way to tell which response failed serialization, so it adds a new response
+     * with the serialization failure for each of the corresponding requests.
+     * 
+     * @param serializer The serializer that generated the error.
+     * @param serializationContext The serialization context.
+     * @param actionContext The action context.
+     * @param t The throwable that needs to be handled.
+     * @param logger The logger to log error messages to.
+     */
+    public static void handleSerializationException(SerializationContext serializationContext, 
+            ActionContext actionContext, Throwable t, Logger logger)
+    {
+        ActionMessage responseMessage = new ActionMessage();
+        actionContext.setResponseMessage(responseMessage);
+
+        int bodyCount = actionContext.getRequestMessage().getBodyCount();
+        for (actionContext.setMessageNumber(0); actionContext.getMessageNumber() < bodyCount; actionContext.incrementMessageNumber())
+        {
+            MessageBody responseBody = new MessageBody();
+            responseBody.setTargetURI(actionContext.getRequestMessageBody().getResponseURI());
+            actionContext.getResponseMessage().addBody(responseBody);
+
+            Object methodResult;
+
+            if (t instanceof MessageException)
+            {
+                methodResult = ((MessageException)t).createErrorMessage();
+            }
+            else
+            {
+                String message = "An error occurred while serializing server response(s).";
+                if (t.getMessage() != null)
+                {
+                    message = t.getMessage();
+                    if (message == null)
+                        message = t.toString();
+                }
+
+                methodResult = new MessageException(message, t).createErrorMessage();
+            }
+
+            if (actionContext.isLegacy())
+            {
+                if (methodResult instanceof ErrorMessage)
+                {
+                    ErrorMessage error = (ErrorMessage)methodResult;
+                    ASObject aso = new ASObject();
+                    aso.put("message", error.faultString);
+                    aso.put("code", error.faultCode);
+                    aso.put("details", error.faultDetail);
+                    aso.put("rootCause", error.rootCause);
+                    methodResult = aso;
+                }
+                else if (methodResult instanceof Message)
+                {
+                    methodResult = ((Message)methodResult).getBody();
+                }
+            }
+            else
+            {
+                try
+                {
+                    //Message inMessage = actionContext.getRequestMessageBody().getDataAsMessage();
+                	Message inMessage = getDataAsMessage( actionContext.getRequestMessageBody().getData() );
+                    if (inMessage.getClientId() != null)
+                        ((ErrorMessage)methodResult).setClientId(inMessage.getClientId().toString());
+
+                    if (inMessage.getMessageId() != null)
+                    {
+                        ((ErrorMessage)methodResult).setCorrelationId(inMessage.getMessageId());
+                        ((ErrorMessage)methodResult).setDestination(inMessage.getDestination());
+                    }
+                }
+                catch (MessageException ignore){}
+            }
+
+            responseBody.setData(methodResult);
+            responseBody.setReplyMethod(MessageIOConstants.STATUS_METHOD);
+        }
+
+        if (Log.isError() && logger != null)
+            logger.error("Exception occurred during serialization: " + ExceptionUtil.toString(t));
+
+        // Serialize the error messages
+        ByteArrayOutputStream outBuffer = new ByteArrayOutputStream();
+        AmfTrace debugTrace = Log.isDebug() ? new AmfTrace() : null;
+        MessageSerializer serializer = serializationContext.newMessageSerializer();
+        serializer.initialize(serializationContext, outBuffer, debugTrace);
+
+        try
+        {
+            serializer.writeMessage(actionContext.getResponseMessage());
+            actionContext.setResponseOutput(outBuffer);
+        }
+        catch (IOException e)
+        {
+            //Error serializing response
+            MessageException ex = new MessageException();
+            ex.setMessage(RESPONSE_ERROR);
+            ex.setRootCause(e);
+            throw ex;
+        }
+    }
+    
+    //Message Type copied from BlazeDS3 source code
+    private static final int ERR_MSG_INVALID_REQUEST_TYPE = 10037;
+    
+    /**
+     * Attemps to return the data as a Flex message. 
+     * This method is added for BlazeDS3 compatibility
+     * @return The data as a Flex message.
+     * @throws MessageException if the data is not of type flex.messaging.message.Message.
+     */
+    public static Message getDataAsMessage( Object data )
+    {
+        if (data instanceof List )
+            data = ((List)data).get(0);
+        else if (data.getClass().isArray())
+            data = Array.get(data, 0);
+
+        if (data instanceof Message)
+            return (Message)data;
+
+        MessageException me = new MessageException();
+        me.setMessage(ERR_MSG_INVALID_REQUEST_TYPE, new Object[] {data.getClass().getName()});
+        throw me;
     }
     
     

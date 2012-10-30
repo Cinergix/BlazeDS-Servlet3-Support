@@ -180,4 +180,11 @@ public class AMFServlet3Endpoint extends BaseServlet3Endpoint {
         }
         TypeMarshallingContext.setTypeMarshaller(null);
     }
+
+	//Implemented for BlazeDS3 interface compatibility
+	@Override
+	protected String getSerializerJava15ClassName() {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }
