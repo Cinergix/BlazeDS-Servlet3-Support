@@ -20,9 +20,9 @@ import javax.servlet.AsyncListener;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.sql.Date;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -337,17 +337,18 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     }
                     
                     synchronized (notifier.pushNeeded) {
-                    
                         // Drain any messages that might have been accumulated
                         // while the previous drain was being processed.
                     	List<AsyncMessage> messages = notifier.drainMessages();
                    
                     	if ( !notifier.isClosed() && messages != null && !messages.isEmpty() ) {
                     		streamMessages( messages, os, res);
+                    		//debug("Stream messages");
                     	}
                     	
                         notifier.pushNeeded.wait( getServerToClientHeartbeatMillis() );
-
+                        //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
+                        
                         messages = null;
                         messages = notifier.drainMessages();
                         // If there are no messages to send to the client, send an null
@@ -357,6 +358,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             if (messages == null && getServerToClientHeartbeatMillis() > 0) {
                                 try {
                                     os.write(NULL_BYTE);
+                                    //debug ("Null byte sent");
                                     res.flushBuffer();
                                 } catch ( IOException ioe ) {
                                 	debug("ERROR: IOError occured when pushing null byte :" + ioe.getMessage() );
@@ -489,9 +491,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      * @param flexClient FlexClient that requested the streaming connection.
      */
     protected void handleFlexClientStreamingOpenRequest(HttpServletRequest req, HttpServletResponse res, FlexClient flexClient) {
-        
+    	
     	debug("we are getting open request from client :" + flexClient.getId() );
-        final FlexSession session = FlexContext.getFlexSession();
+        final FlexSession session = FlexContext.getFlexSession();        
         
         if (canStream && session.canStream) {
             debug("can stream");
@@ -508,10 +510,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 ++streamingClientsCount;
                 if (streamingClientsCount == maxStreamingClients) {
                     thisThreadCanStream = true; // This thread got the last spot.
-                    canStream = false;
+                    canStream = false;                    
                 } else if (streamingClientsCount > maxStreamingClients) {
                     thisThreadCanStream = false; // This thread was beaten out for the last spot.
                     --streamingClientsCount; // Decrement the count because we're not going to grant the streaming right to the client.
+                    //debug("canstream false streamingClientsCount > maxStreamingClients ");
                 } else {
                     // We haven't hit the limit yet, allow this thread to stream.
                     thisThreadCanStream = true;
@@ -535,9 +538,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                        
             // Setup for specific user agents.
             byte[] kickStartBytesToStream = null;
-            String userAgentValue = req.getHeader( "user-agent" ); //Changed for BlazeDS3 compatibility
-            //System.out.println ("User agent detected : " + userAgentValue );
-            UserAgentSettings agentSettings = UserAgentSettings.getAgent( userAgentValue ); //Changed for BlazeDS3 compatibility
+            String userAgentValue = req.getHeader( "user-agent" ); //Changed for BlazeDS3 compatibility            
+            String userAgentMatchOn = UserAgentHelper.getMatchOnString( userAgentValue );
+            UserAgentSettings agentSettings = getUserAgentSettings( userAgentMatchOn );            
+            if ( agentSettings == null ) { //if user agent does not match for any known strings
+            	agentSettings = UserAgentSettings.getAgent( userAgentValue );
+            	agentSettings.setMaxStreamingConnectionsPerSession( 5 ); //set default value of 5
+            }
+            
+            
             if (agentSettings != null) {
                 synchronized (session) {
                     session.maxConnectionsPerSession = agentSettings.getMaxStreamingConnectionsPerSession(); //Changed for BlazeDS3 compatibility
@@ -762,6 +771,8 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 	debug( "starting notifierThread running");
                 	threadState = notifierThread.submit( notifierRunnable );
                 
+                } else {
+                    debug( "notifierThread already running with queue: " + queue.size() );
                 }
                 
                 
@@ -779,9 +790,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     + flexClient.getId() + "' because max-streaming-clients limit of '"
                     + maxStreamingClients + "' has been reached.";
                 } else if (!session.canStream) {
-                   /* logString = "Endpoint with id '" + getId() + "' cannot grant streaming connection to FlexClient with id '"
-                    + flexClient.getId() + "' because " + UserAgentManager.MAX_STREAMING_CONNECTIONS_PER_SESSION + " limit of '"
-                    + session.maxConnectionsPerSession + "' has been reached.";*/
+                   logString = "Endpoint with id '" + getId() + "' cannot grant streaming connection to FlexClient with id '"
+                    + flexClient.getId() + "' because max-streaming-connections-per-session limit of '"
+                    + session.maxConnectionsPerSession + "' has been reached.";
                 }
                 if (logString != null)
                     log.error(logString);
