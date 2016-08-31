@@ -420,17 +420,22 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
 			if ( ac.getRequest() != null && ac.getRequest().isAsyncStarted() ) {
                 ac.complete();
             }
-			
-			//Remove the context from the queue
-            queue.remove(ac);
-
-            if (notifier != null && currentStreamingRequests != null) {
-                currentStreamingRequests.remove( notifier.getNotifierId() );
-                notifier.close();
-            }
             
         } catch (Exception e) {
             e.printStackTrace();
+        } finally {
+        	
+        	try {
+	        	//Remove the context from the queue
+	            queue.remove(ac);
+	
+	            if (notifier != null && currentStreamingRequests != null) {
+	                currentStreamingRequests.remove( notifier.getNotifierId() );
+	                notifier.close();                
+	            }
+        	} catch ( Exception e ) {
+        		e.printStackTrace();
+        	}
         }
     }
     
@@ -761,7 +766,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 if (getConnectionIdleTimeoutMinutes() > 0) {
                 	actx.setTimeout( getConnectionIdleTimeoutMinutes() * 60 * 1000 );
                 } else {
-                	actx.setTimeout(3 * 60 * 1000); // 3 minutes
+                	actx.setTimeout(3 * 60 * 1000 ); // 3 minutes
                 }
                 
                 queue.add(actx);
