@@ -421,22 +421,17 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 ac.complete();
             }
             
+			//Remove the context from the queue
+            queue.remove(ac);
+
+            if (notifier != null && currentStreamingRequests != null) {
+                currentStreamingRequests.remove( notifier.getNotifierId() );
+                notifier.close();                
+            }
+            
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-        	
-        	try {
-	        	//Remove the context from the queue
-	            queue.remove(ac);
-	
-	            if (notifier != null && currentStreamingRequests != null) {
-	                currentStreamingRequests.remove( notifier.getNotifierId() );
-	                notifier.close();                
-	            }
-        	} catch ( Exception e ) {
-        		e.printStackTrace();
-        	}
-        }
+        } 
     }
     
     
@@ -714,6 +709,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     @Override
                     public void onTimeout(AsyncEvent event) throws IOException {
                         debug("AsyncContext Timeout! " );
+                        AsyncContext asyncContext = event.getAsyncContext();
+                        EndpointPushNotifier endpointNotifier = (EndpointPushNotifier) asyncContext.getRequest().getAttribute("pushNotifier");
+                        cleanUp( asyncContext, endpointNotifier);                        
                     }
                     
                     @Override
