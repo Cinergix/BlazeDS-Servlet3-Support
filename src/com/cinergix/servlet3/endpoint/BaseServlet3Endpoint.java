@@ -713,22 +713,27 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 actx.addListener(new AsyncListener() {
                     @Override
                     public void onTimeout(AsyncEvent event) throws IOException {
-                        debug("AsyncContext Timeout! " );
+                        FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
+                        debug("AsyncContext Timeout! " + client.getId() );
                     }
                     
                     @Override
                     public void onStartAsync(AsyncEvent event) throws IOException {
-                        debug("AsyncContext Start async! " );
+                        FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
+                        debug("AsyncContext Start async! " + + client.getId() );
                     }
                     
                     @Override
                     public void onError(AsyncEvent event) throws IOException {
-                        debug("ERROR: AsyncContext Error! " );
+                        FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
+                        debug("ERROR: AsyncContext Error! " + client.getId() );
                     }
                     
                     @Override
                     public void onComplete(AsyncEvent event) throws IOException {
-                        debug("AsyncContext Complete! " + event);
+                        FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
+                        debug("AsyncContext Complete! " + client.getId());
+
                         synchronized (lock) {
                             --streamingClientsCount;
                             canStream = (streamingClientsCount < maxStreamingClients);
