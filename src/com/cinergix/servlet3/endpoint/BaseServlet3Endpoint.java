@@ -319,6 +319,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 try {
                 	//If the AsyncContext has completed (due to timeout) then remove it.
                     if ( ac.getRequest() == null || !ac.getRequest().isAsyncStarted() ) {
+                        debug("pushMessages: AsyncContext seems to be complete. Going to skip processing")
                         cleanUp( ac, notifier );
                         continue;
                     }
@@ -329,7 +330,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     ServletOutputStream os = res.getOutputStream();
                     
                     if (notifier.isClosed()) {
-                        debug("Notifier seems to be closed. Ending streaming :" + flexClient.getId() );
+                        debug("pushMessages: Notifier seems to be closed. Ending streaming :" + flexClient.getId() );
                         
                         // Terminate the response.
                         streamChunk(null, os, res);
@@ -377,7 +378,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 }
                                 
                             } else { // Otherwise stream the messages to the client.
-                                debug("Stream messages");
+                                debug("pushMessages: Stream messages : " + flexClient.getId() );
                                 // Update the last time notifier was used to drain messages.
                                 // Important for idle timeout detection.
                                 streamMessages(messages, os, res);
@@ -385,7 +386,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             }
                             
                         } else {
-                        	debug("Nothing is pushed since the notifier is closed :" + flexClient.getId() );
+                        	debug("pushMessages: Nothing is pushed since the notifier is closed : " + flexClient.getId() );
                         }
                         
                     }
@@ -414,14 +415,16 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      */
     private void cleanUp( AsyncContext ac, EndpointPushNotifier notifier ) {
         try {
-			debug("Clean Up called");
+			debug("cleanUp called ");
 			
 			//If the context is still not committed, go ahead and commit it.
 			if ( ac.getRequest() != null && ac.getRequest().isAsyncStarted() ) {
+                debug("cleanUp: Completing AsyncContext");
                 ac.complete();
             }
             
         } catch (Exception e) {
+            debug("ERROR: occured while trying to complete AsyncContext");
             e.printStackTrace();
         } finally {
         	
@@ -430,6 +433,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
 	            queue.remove(ac);
 	
 	            if (notifier != null && currentStreamingRequests != null) {
+                    debug("cleanUp: Closing Notifier");
 	                currentStreamingRequests.remove( notifier.getNotifierId() );
 	                notifier.close();                
 	            }
