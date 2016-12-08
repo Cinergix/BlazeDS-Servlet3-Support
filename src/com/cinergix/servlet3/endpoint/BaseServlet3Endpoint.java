@@ -501,13 +501,13 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      */
     protected void handleFlexClientStreamingOpenRequest(HttpServletRequest req, HttpServletResponse res, FlexClient flexClient) {
     	
-    	debug("we are getting open request from client :" + flexClient.getId() );
+    	debug("HandleOpen: we are getting open request from client :" + flexClient.getId() );
         final FlexSession session = FlexContext.getFlexSession();        
         
         if (canStream && session.canStream) {
-            debug("can stream");
-            debug("streamingClientsCount " + streamingClientsCount);
-            debug("maxConnectionsPerSession " + session.maxConnectionsPerSession);
+            debug("HandleOpen: can stream");
+            debug("HandleOpen: streamingClientsCount " + streamingClientsCount);
+            debug("HandleOpen: maxConnectionsPerSession " + session.maxConnectionsPerSession);
             // If canStream/session.canStream is true it means we currently have
             // less than the max number of allowed streaming threads, per endpoint/session.
 
@@ -538,7 +538,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             + flexClient.getId() + "' because max-streaming-clients limit of '"
                             + maxStreamingClients + "' has been reached.");
                 try {
-                	debug ( "Going to send error. Response committed:" + res.isCommitted() );
+                	debug ( "HandleOpen: Going to send error. Response committed:" + res.isCommitted() );
                     // Return an HTTP status code 400.
                     res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                 } catch (IOException ignore) {}
@@ -606,7 +606,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                             + flexClient.getId() + "' because max-streaming-connections-per-session limit of '" + session.maxConnectionsPerSession
                             + ((agentSettings != null) ? "' for user-agent '" + agentSettings.getMatchOn() + "'" : "") +  " has been reached." );
                 try {
-                	debug ( "Going to send error. Response committed:" + res.isCommitted() );
+                	debug ( "HandleOpen: Going to send error. Response committed:" + res.isCommitted() );
                  // Return an HTTP status code 400.
                     res.sendError(HttpServletResponse.SC_BAD_REQUEST);
                 } catch (IOException ignore) {
@@ -620,7 +620,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
             EndpointPushNotifier notifier = null;
             boolean suppressIOExceptionLogging = false; // Used to suppress logging for IO exception.
             try {
-                debug("goint to start streaming");
+                debug("HandleOpen: goint to start streaming");
                 //currentThread.setName(threadName + "-in-streaming-mode");
                 currentThread.setName( this.threadNameCount( threadName ) );
 
@@ -632,7 +632,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 res.setHeader("Transfer-Encoding", "chunked");
                 ServletOutputStream os = res.getOutputStream();
                 res.flushBuffer();
-                debug("response headers commited");
+                debug("HandleOpen: response headers commited");
 
                 // If kickstart-bytes are specified, stream them.
                 if (kickStartBytesToStream != null) {
@@ -642,18 +642,18 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                                 + flexClient.getId() + "'.");
 
                     streamChunk(kickStartBytesToStream, os, res);
-                    debug("kick bytes streamed");
+                    debug("HandleOpen: kick bytes streamed");
                 }
 
                 // Setup serialization and type marshalling contexts
                 setThreadLocals();
-                debug("thread locals is good");
+                debug("HandleOpen: thread locals is good");
 
                 // Activate streaming helper for this connection.
                 // Watch out for duplicate stream issues.
                 try {
                     notifier = new EndpointPushNotifier(this, flexClient);
-                    debug("push notifier created");
+                    debug("HandleOpen: push notifier created");
                 } catch (MessageException me) {
                     debug("ERROR: got message exception");
                     if (me.getNumber() == 10033) { // It's a duplicate stream request from the same FlexClient. Leave the current stream in place and fault this.
@@ -680,7 +680,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
 	                            }
 	                        }
 	
-	                        debug ( "Open request ignored!" );
+	                        debug ( "HandleOpen: Open request ignored!" );
 	                        return; // Exit early.
                         }
                     }
@@ -688,7 +688,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 
                 if (getConnectionIdleTimeoutMinutes() > 0) {
                     notifier.setIdleTimeoutMinutes(getConnectionIdleTimeoutMinutes());
-                    debug("set connection idle timeout minutes to " + getConnectionIdleTimeoutMinutes());
+                    debug("HandleOpen: set connection idle timeout minutes to " + getConnectionIdleTimeoutMinutes());
                 }
                 notifier.setLogCategory(getLogCategory());
                 //monitorTimeout(notifier);
@@ -701,18 +701,18 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 ArrayList toPush = new ArrayList(1);
                 toPush.add(connectAck);
                 streamMessages(toPush, os, res);
-                debug("acknowledge message streamed");
+                debug("HandleOpen: acknowledge message streamed");
 
                 // Output session level streaming count.
-                debug("Number of streaming clients for FlexSession with id '"+ session.getId() +"' is " + session.streamingConnectionsCount + ".");
+                debug("HandleOpen: Number of streaming clients for FlexSession with id '"+ session.getId() +"' is " + session.streamingConnectionsCount + ".");
 
                 // Output endpoint level streaming count.
-                debug("Number of streaming clients for endpoint with id '"+ getId() +"' is " + streamingClientsCount + ".");
+                debug("HandleOpen: Number of streaming clients for endpoint with id '"+ getId() +"' is " + streamingClientsCount + ".");
 
                 // Now we ready to put push notifier in queue for async proccessing
                 req.setAttribute("pushNotifier", notifier);
                 req.setAttribute("flexClient", flexClient);
-                debug("creating async context");
+                debug("HandleOpen: creating async context");
                 AsyncContext actx = req.startAsync();
                 actx.addListener(new AsyncListener() {
                     @Override
@@ -758,20 +758,20 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                        //If the flex client closes the session the FlexSession would be null at this point -HT
                         if (session != null) {
                         	// Output session level streaming count.
-                        	debug("Number of streaming clients for FlexSession with id '"+ session.getId() +"' is " + session.streamingConnectionsCount + ".");
+                        	debug("AsyncContext: Number of streaming clients for FlexSession with id '"+ session.getId() +"' is " + session.streamingConnectionsCount + ".");
                         } else {
-                        	debug("FlexSession was closed and unable to determine the details.");
+                        	debug("AsyncContext: FlexSession was closed and unable to determine the details.");
                         }
                         
                         // Output endpoint level streaming count.
-                        debug("Number of streaming clients for endpoint with id '"+ getId() +"' is " + streamingClientsCount + ".");
+                        debug("AsyncContext: Number of streaming clients for endpoint with id '"+ getId() +"' is " + streamingClientsCount + ".");
                         
                     }
                 });
                 
                 // Set the context timeout to the user specified value.
                 
-                debug ( "getConnectionIdleTimeoutMinutes = " + getConnectionIdleTimeoutMinutes() );
+                debug ( "HandleOpen: getConnectionIdleTimeoutMinutes = " + getConnectionIdleTimeoutMinutes() );
                 if (getConnectionIdleTimeoutMinutes() > 0) {
                 	actx.setTimeout( getConnectionIdleTimeoutMinutes() * 60 * 1000 );
                 } else {
@@ -782,11 +782,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 
                 //If the notifier thread is not running then start it.
                 if ( threadState == null || threadState.isDone() ){
-                	debug( "starting notifierThread running");
+                	debug( "HandleOpen: starting notifierThread running");
                 	threadState = notifierThread.submit( notifierRunnable );
                 
                 } else {
-                    debug( "notifierThread already running with queue: " + queue.size() );
+                    debug( "HandleOpen: notifierThread already running with queue: " + queue.size() );
                 }
                 
                 
