@@ -423,23 +423,17 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 ac.complete();
             }
             
+			//Remove the context from the queue
+            queue.remove(ac);
+
+            if (notifier != null && currentStreamingRequests != null) {
+                currentStreamingRequests.remove( notifier.getNotifierId() );
+                notifier.close();                
+            }
+            
         } catch (Exception e) {
             debug("ERROR: occured while trying to complete AsyncContext");
             e.printStackTrace();
-        } finally {
-        	
-        	try {
-	        	//Remove the context from the queue
-	            queue.remove(ac);
-	
-	            if (notifier != null && currentStreamingRequests != null) {
-                    debug("cleanUp: Closing Notifier");
-	                currentStreamingRequests.remove( notifier.getNotifierId() );
-	                notifier.close();                
-	            }
-        	} catch ( Exception e ) {
-        		e.printStackTrace();
-        	}
         }
     }
     
@@ -717,8 +711,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 actx.addListener(new AsyncListener() {
                     @Override
                     public void onTimeout(AsyncEvent event) throws IOException {
-                        FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
-                        debug("AsyncContext Timeout! " + client.getId() );
+                    	FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
+						debug("AsyncContext Timeout! " + client.getId() );
+                        AsyncContext asyncContext = event.getAsyncContext();
+                        EndpointPushNotifier endpointNotifier = (EndpointPushNotifier) asyncContext.getRequest().getAttribute("pushNotifier");
+                        cleanUp( asyncContext, endpointNotifier);                        
                     }
                     
                     @Override
