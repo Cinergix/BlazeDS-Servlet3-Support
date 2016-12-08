@@ -319,7 +319,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 try {
                 	//If the AsyncContext has completed (due to timeout) then remove it.
                     if ( ac.getRequest() == null || !ac.getRequest().isAsyncStarted() ) {
-                        debug("pushMessages: AsyncContext seems to be complete. Going to skip processing")
+                        debug("pushMessages: AsyncContext seems to be complete. Going to skip processing");
                         cleanUp( ac, notifier );
                         continue;
                     }
@@ -724,7 +724,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     @Override
                     public void onStartAsync(AsyncEvent event) throws IOException {
                         FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
-                        debug("AsyncContext Start async! " + + client.getId() );
+                        debug("AsyncContext Start async! " + client.getId() );
                     }
                     
                     @Override
