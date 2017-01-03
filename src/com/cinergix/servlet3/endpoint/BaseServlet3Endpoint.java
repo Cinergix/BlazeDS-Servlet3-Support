@@ -1,26 +1,5 @@
 package com.cinergix.servlet3.endpoint;
 
-import edu.emory.mathcs.backport.java.util.concurrent.ThreadFactory;
-import flex.messaging.FlexContext;
-import flex.messaging.FlexSession;
-import flex.messaging.MessageException;
-import flex.messaging.client.EndpointPushNotifier;
-import flex.messaging.client.FlexClient;
-import flex.messaging.client.UserAgentSettings;
-import flex.messaging.config.ConfigMap;
-import flex.messaging.endpoints.BaseStreamingHTTPEndpoint;
-import flex.messaging.log.Log;
-import flex.messaging.messages.AcknowledgeMessage;
-import flex.messaging.messages.AsyncMessage;
-import flex.messaging.util.TimeoutManager;
-
-import javax.servlet.AsyncContext;
-import javax.servlet.AsyncEvent;
-import javax.servlet.AsyncListener;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.text.DateFormat;
@@ -36,6 +15,27 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import javax.servlet.AsyncContext;
+import javax.servlet.AsyncEvent;
+import javax.servlet.AsyncListener;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import edu.emory.mathcs.backport.java.util.concurrent.ThreadFactory;
+import flex.messaging.FlexContext;
+import flex.messaging.FlexSession;
+import flex.messaging.MessageException;
+import flex.messaging.client.EndpointPushNotifier;
+import flex.messaging.client.FlexClient;
+import flex.messaging.client.UserAgentSettings;
+import flex.messaging.config.ConfigMap;
+import flex.messaging.endpoints.BaseStreamingHTTPEndpoint;
+import flex.messaging.log.Log;
+import flex.messaging.messages.AcknowledgeMessage;
+import flex.messaging.messages.AsyncMessage;
+import flex.messaging.util.TimeoutManager;
 
 /**
  * Base for HTTP-based endpoints that support streaming HTTP connections to
@@ -310,11 +310,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
      */
     private void pushMessages ( ) {
     	
+    	//This flag is used to check if the loop waited at least once during a cycle, 
+    	//when it loops through available context
+    	boolean waitedInCycle = false;
+    	
     	//Continue to push only if the queue contains AsyncContexts - HT
-        while ( !queue.isEmpty() ) {
+        while ( !queue.isEmpty() ) {        	
         	
             for (AsyncContext ac : queue) {
-            	
+
                 EndpointPushNotifier notifier = null;
                 try {
                 	//If the AsyncContext has completed (due to timeout) then remove it.
@@ -347,7 +351,13 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     		//debug("Stream messages");
                     	}
                     	
-                        notifier.pushNeeded.wait( getServerToClientHeartbeatMillis() );
+                    	//Waits if the loop has not waited at least once in the current cycle.
+                    	//If the wait is done for each and every context, it introduces a delay 
+                    	//that increases in correlation to the number of contexts
+                    	if  ( !waitedInCycle ) {
+                    		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
+                    		waitedInCycle = true;
+                    	}
                         //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
                         
                         messages = null;
@@ -401,11 +411,12 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 	debug("ERROR: Error occured in push loop :" + ex.getMessage() );
                     //ex.printStackTrace();
                     cleanUp( ac, notifier );
-                }
+                }  
                 
             }
+            
+            waitedInCycle = false;
         }
-        
     }
     
     /**
