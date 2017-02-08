@@ -415,10 +415,11 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 	debug("ERROR: Error occured in push loop :" + ex.getMessage() );
                     //ex.printStackTrace();
                     cleanUp( ac, notifier );
-                } 
+                }
                 
-                waitedInCycle = false;
             }
+            
+            waitedInCycle = false;
         }
     }
     
