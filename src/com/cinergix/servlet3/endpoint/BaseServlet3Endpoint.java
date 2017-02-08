@@ -53,6 +53,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     private static final byte NULL_BYTE = (byte)0; // signal that a chunk of data should be skipped by the client.
     
     private static final int DEFAULT_MAX_STREAMING_CLIENTS = 500;
+    private static final int WAIT_TIME_BETWEEN_PUSH = 20;
     
     private static final String P_NAME_ENABLE_DEBUG = "enable-debug-mode";
     private static final String P_NAME_MAX_STREAMING_CLIENTS = "max-streaming-clients";
@@ -357,7 +358,10 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     	if  ( !waitedInCycle ) {
                     		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
                     		waitedInCycle = true;
+                    	} else {
+                    		notifier.pushNeeded.wait( WAIT_TIME_BETWEEN_PUSH );
                     	}
+                		
                         //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
                         
                         messages = null;
@@ -411,7 +415,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 	debug("ERROR: Error occured in push loop :" + ex.getMessage() );
                     //ex.printStackTrace();
                     cleanUp( ac, notifier );
-                }  
+                }
                 
             }
             
@@ -736,7 +740,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     }
                     
                     @Override
-                    public void onError(AsyncEvent event) throws IOException {
+                    public void onError(AsyncEvent event) throws IOException { 
                         FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
                         debug("ERROR: AsyncContext Error! " + client.getId() );
                     }
