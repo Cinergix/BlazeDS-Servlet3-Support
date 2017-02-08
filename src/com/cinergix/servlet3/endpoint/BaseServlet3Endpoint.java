@@ -53,6 +53,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     private static final byte NULL_BYTE = (byte)0; // signal that a chunk of data should be skipped by the client.
     
     private static final int DEFAULT_MAX_STREAMING_CLIENTS = 500;
+    private static final int WAIT_TIME_BETWEEN_PUSH = 20;
     
     private static final String P_NAME_ENABLE_DEBUG = "enable-debug-mode";
     private static final String P_NAME_MAX_STREAMING_CLIENTS = "max-streaming-clients";
@@ -312,6 +313,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     	
     	//This flag is used to check if the loop waited at least once during a cycle, 
     	//when it loops through available context
+    	boolean waitedInCycle = false;
     	
     	//Continue to push only if the queue contains AsyncContexts - HT
         while ( !queue.isEmpty() ) {        	
@@ -350,12 +352,15 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     		//debug("Stream messages");
                     	}
                     	
-                    	// Wait for few milliseconds for every context. This is done to prevent a 
-                    	// deadlock that appears very often for some reason. Wait time should be 
-                    	// minimal so that entire push cycle wont take more time. If the wait time 
-                    	// is big then push cycle time will increase and there will be a big delay 
-                    	// on realtime changes to reflect on the other end.
-                		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
+                    	//Waits if the loop has not waited at least once in the current cycle.
+                    	//If the wait is done for each and every context, it introduces a delay 
+                    	//that increases in correlation to the number of contexts
+                    	if  ( !waitedInCycle ) {
+                    		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
+                    		waitedInCycle = true;
+                    	} else {
+                    		notifier.pushNeeded.wait( WAIT_TIME_BETWEEN_PUSH );
+                    	}
                 		
                         //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
                         
@@ -410,8 +415,9 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 	debug("ERROR: Error occured in push loop :" + ex.getMessage() );
                     //ex.printStackTrace();
                     cleanUp( ac, notifier );
-                }  
+                } 
                 
+                waitedInCycle = false;
             }
         }
     }
