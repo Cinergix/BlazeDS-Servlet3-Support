@@ -312,7 +312,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     	
     	//This flag is used to check if the loop waited at least once during a cycle, 
     	//when it loops through available context
-    	boolean waitedInCycle = false;
     	
     	//Continue to push only if the queue contains AsyncContexts - HT
         while ( !queue.isEmpty() ) {        	
@@ -351,13 +350,13 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     		//debug("Stream messages");
                     	}
                     	
-                    	//Waits if the loop has not waited at least once in the current cycle.
-                    	//If the wait is done for each and every context, it introduces a delay 
-                    	//that increases in correlation to the number of contexts
-                    	if  ( !waitedInCycle ) {
-                    		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
-                    		waitedInCycle = true;
-                    	}
+                    	// Wait for few milliseconds for every context. This is done to prevent a 
+                    	// deadlock that appears very often for some reason. Wait time should be 
+                    	// minimal so that entire push cycle wont take more time. If the wait time 
+                    	// is big then push cycle time will increase and there will be a big delay 
+                    	// on realtime changes to reflect on the other end.
+                		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
+                		
                         //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
                         
                         messages = null;
@@ -414,8 +413,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                 }  
                 
             }
-            
-            waitedInCycle = false;
         }
     }
     
@@ -736,7 +733,7 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     }
                     
                     @Override
-                    public void onError(AsyncEvent event) throws IOException {
+                    public void onError(AsyncEvent event) throws IOException { 
                         FlexClient client = (FlexClient) event.getSuppliedRequest().getAttribute("flexClient");
                         debug("ERROR: AsyncContext Error! " + client.getId() );
                     }
