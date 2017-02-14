@@ -53,7 +53,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     private static final byte NULL_BYTE = (byte)0; // signal that a chunk of data should be skipped by the client.
     
     private static final int DEFAULT_MAX_STREAMING_CLIENTS = 500;
-    private static final int WAIT_TIME_BETWEEN_PUSH = 20;
     
     private static final String P_NAME_ENABLE_DEBUG = "enable-debug-mode";
     private static final String P_NAME_MAX_STREAMING_CLIENTS = "max-streaming-clients";
@@ -316,10 +315,12 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
     	boolean waitedInCycle = false;
     	
     	//Continue to push only if the queue contains AsyncContexts - HT
-        while ( !queue.isEmpty() ) {        	
+        while ( !queue.isEmpty() ) {
+        	
+        	debug( "Total active context count is " + queue.size() );
         	
             for (AsyncContext ac : queue) {
-
+            	
                 EndpointPushNotifier notifier = null;
                 try {
                 	//If the AsyncContext has completed (due to timeout) then remove it.
@@ -358,8 +359,6 @@ public abstract class BaseServlet3Endpoint extends BaseStreamingHTTPEndpoint {
                     	if  ( !waitedInCycle ) {
                     		notifier.pushNeeded.wait( this.getServerToClientHeartbeatMillis() );
                     		waitedInCycle = true;
-                    	} else {
-                    		notifier.pushNeeded.wait( WAIT_TIME_BETWEEN_PUSH );
                     	}
                 		
                         //debug("getServerToClientHeartbeatMillis : " + getServerToClientHeartbeatMillis()  );
