@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <project name="servlet3-endpoint" default="jar" basedir=".">
-    <property name="version" value="1.3.1"/>
+    <property name="version" value="1.3.2"/>
     <property name="src.dir" value="./src" />
     <property name="build.dir" location="./build" />
     <property name="dist.dir" value="./dist" />
@@ -10,6 +10,7 @@
     <property name="javadoc.jar.file.name" value="${dist.dir}/${ant.project.name}-${version}-javadoc.jar" />
     <property name="src.jar.file.name" value="${dist.dir}/${ant.project.name}-${version}-sources.jar" />
     <property name="compiler.jdk.version" value="1.8" />
+    <tstamp/>
 
     <path id="libraries">
         <fileset dir="${lib.dir}">
@@ -38,7 +39,15 @@
 
     <target name="jar" depends="compile">
         <mkdir dir="${dist.dir}" />
-        <jar destfile="${jar.file.name}" basedir="${build.dir}" includes="**/*.class" />
+        <mkdir dir="${build.dir}/META-INF" />
+        <manifest file="${build.dir}/META-INF/MANIFEST.MF">
+		    <attribute name="Built-By" value="${user.name}"/>
+		    <attribute name="Title" value="Servlet3 Endpoint"/>
+		    <attribute name="Version" value="${version}"/>
+		    <attribute name="Vendor" value="Cinergix pvt ltd."/>
+		    <attribute name="Created" value="${TODAY}"/>
+		</manifest>
+        <jar manifest="${build.dir}/META-INF/MANIFEST.MF" destfile="${jar.file.name}" basedir="${build.dir}" includes="**/*.class" />
     	<copy file="${jar.file.name}" tofile="/server/blazeds/tomcat/webapps/jupiter/WEB-INF/lib/${ant.project.name}-${version}.jar" overwrite="true" />
     </target>
     
